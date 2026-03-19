@@ -29,6 +29,24 @@ export default class DocktouchPreferences extends ExtensionPreferences {
         });
         group.add(modeRow);
 
+        // Onde exibir o Dock
+        const monitorModel = Gtk.StringList.new([
+            'Monitor Principal',
+            'Todos os Monitores'
+        ]);
+
+        const monitorRow = new Adw.ComboRow({
+            title: 'Exibir em:',
+            model: monitorModel,
+            selected: (settings.get_string('display-mode') === 'all') ? 1 : 0
+        });
+
+        monitorRow.connect('notify::selected', () => {
+            const value = monitorRow.selected === 1 ? 'all' : 'primary';
+            settings.set_string('display-mode', value);
+        });
+        group.add(monitorRow);
+
         // Cor de Fundo
         const colorRow = new Adw.ActionRow({ title: 'Cor de Fundo' });
         const colorBtn = new Gtk.ColorButton();
@@ -73,7 +91,7 @@ export default class DocktouchPreferences extends ExtensionPreferences {
         // Largura Normal
         const normalWidthRow = new Adw.ActionRow({ title: 'Largura Normal (px)' });
         const normalWidthSpin = new Gtk.SpinButton({
-            adjustment: new Gtk.Adjustment({ lower: 50, upper: 400, step_increment: 5, page_increment: 10, value: settings.get_int('normal-width') }),
+            adjustment: new Gtk.Adjustment({ lower: 260, upper: 400, step_increment: 5, page_increment: 10, value: settings.get_int('normal-width') }),
             valign: Gtk.Align.CENTER
         });
         settings.bind('normal-width', normalWidthSpin.get_adjustment(), 'value', Gio.SettingsBindFlags.DEFAULT);
@@ -83,7 +101,7 @@ export default class DocktouchPreferences extends ExtensionPreferences {
         // Largura Expandida
         const expandedWidthRow = new Adw.ActionRow({ title: 'Largura Expandida (px)' });
         const expandedWidthSpin = new Gtk.SpinButton({
-            adjustment: new Gtk.Adjustment({ lower: 300, upper: 1000, step_increment: 10, page_increment: 50, value: settings.get_int('expanded-width') }),
+            adjustment: new Gtk.Adjustment({ lower: 760, upper: 1000, step_increment: 10, page_increment: 50, value: settings.get_int('expanded-width') }),
             valign: Gtk.Align.CENTER
         });
         settings.bind('expanded-width', expandedWidthSpin.get_adjustment(), 'value', Gio.SettingsBindFlags.DEFAULT);
@@ -93,7 +111,7 @@ export default class DocktouchPreferences extends ExtensionPreferences {
         // Altura Expandida
         const expandedHeightRow = new Adw.ActionRow({ title: 'Altura Expandida (px)' });
         const expandedHeightSpin = new Gtk.SpinButton({
-            adjustment: new Gtk.Adjustment({ lower: 100, upper: 600, step_increment: 5, page_increment: 10, value: settings.get_int('expanded-height') }),
+            adjustment: new Gtk.Adjustment({ lower: 350, upper: 600, step_increment: 5, page_increment: 10, value: settings.get_int('expanded-height') }),
             valign: Gtk.Align.CENTER
         });
         settings.bind('expanded-height', expandedHeightSpin.get_adjustment(), 'value', Gio.SettingsBindFlags.DEFAULT);

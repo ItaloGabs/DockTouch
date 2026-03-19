@@ -6,7 +6,7 @@
       <summary>Normal width of the pill</summary>
     </key>
     <key name="expanded-width" type="i">
-      <default>600</default>
+      <default>760</default>
       <summary>Expanded width of the pill</summary>
     </key>
     <key name="normal-height" type="i">
@@ -60,6 +60,10 @@
     <key name="island-mode" type="s">
       <default>'standard'</default>
       <summary>Island mode: 'dynamic' or 'standard'</summary>
+    </key>
+    <key name="display-mode" type="s">
+      <default>'primary'</default>
+      <summary>Display mode: 'primary' or 'all'</summary>
     </key>
     <key name="clipboard-history" type="as">
       <default>[]</default>

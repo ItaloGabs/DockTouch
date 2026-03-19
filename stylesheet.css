@@ -198,74 +198,69 @@
     padding: 16px;
 }
 
-/* Media Tab */
-.mpris-album-art {
-    width: 65px;
-    height: 65px;
-    border-radius: 14px;
+/* Media Tab Modern Layout */
+.mpris-panel {
+    padding: 20px;
+}
+
+.mpris-album-art-large {
+    width: 150px;
+    height: 150px;
+    min-width: 150px;
+    border-radius: 20px;
     background-color: rgba(255,255,255,0.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
-.mpris-title {
+.mpris-title-large {
     color: #ffffff;
-    font-weight: 600;
-    font-size: 12pt;
+    font-weight: bold;
+    font-size: 14pt;
 }
 
-.mpris-artist {
+.mpris-artist-large {
     color: rgba(255, 255, 255, 0.6);
-    font-size: 10pt;
+    font-size: 11pt;
 }
 
-.playback-bar {
-    spacing: 8px;
-    margin-top: 15px;
+.player-controls-modern {
+    spacing: 12px;
+    margin-top: 4px;
 }
 
-.progress-container {
-    height: 6px;
-    background-color: rgba(255, 255, 255, 0.2);
-    border-radius: 3px;
-}
-
-.progress-bar {
-    background-color: #ffffff;
-    border-radius: 3px;
-    height: 6px;
-}
-
-.player-controls-compact {
-    spacing: 20px;
-    margin-top: 15px;
-}
-
-.control-btn {
-    color: rgba(255, 255, 255, 0.8);
+.control-btn-small {
+    color: rgba(255, 255, 255, 0.6);
     background-color: transparent;
-    padding: 8px;
+    padding: 6px;
     border-radius: 50%;
-    transition: all 0.2s;
 }
 
-.control-btn:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+.control-btn-small:hover {
     color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.1);
 }
 
-.control-btn.highlight {
+.control-btn-small.active {
+    color: #1DB954; /* Spotify green as example or just a bright color */
+}
+
+.control-btn-main {
     background-color: #ffffff;
     color: #000000;
-    width: 38px;
-    height: 38px;
+    width: 42px;
+    height: 42px;
+    border-radius: 21px;
     padding: 0;
 }
 
-.control-btn.highlight StIcon {
-    color: #000000;
+.control-btn-main:hover {
+    background-color: rgba(255, 255, 255, 0.9);
+    transform: scale(1.05);
 }
 
-.control-btn StIcon {
-    icon-size: 20px;
+.control-btn-main StIcon {
+    color: #000000;
+    icon-size: 24px;
 }
 
 /* Calendar Column */

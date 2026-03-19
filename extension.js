@@ -23,174 +23,47 @@ import { PlayerManager } from './lib/mpris.js';
 import { StatsManager } from './lib/stats.js';
 import * as Tabs from './lib/tabs.js';
 
-export default class DocktouchExtension extends Extension {
-    enable() {
-        this._settings = this.getSettings();
-        this._signals = new Map();
+class Dock {
+    constructor(extension, monitor) {
+        this.extension = extension;
+        this._monitor = monitor;
+        this._settings = extension._settings;
+        
         this._activeTab = 'system';
-        this._scrollView = null;
-        this._progressTimerId = null;
-        this._clipboardHistory = this._settings.get_strv('clipboard-history') || [];
-        this._lastScrollTime = 0;
-        this._lastClipboardText = this._clipboardHistory.length > 0 ? this._clipboardHistory[0] : '';
-
-        // Managers
-        this._systemInfo = getSystemInfo();
-        this._playerManager = new PlayerManager({
-            onUpdate: () => {
-                if (this._isExpanded && this._activeTab === 'media') {
-                    const now = GLib.get_monotonic_time();
-                    if (this._lastScrollTime && (now - this._lastScrollTime) < 1000000) return;
-                    this._updateExpandedContent();
-                }
-            },
-            onMiniUpdate: () => this._updateMiniPlayerVisibility()
-        });
-        this._playerManager.setup();
-
-        this._lastIsCharging = false;
-        this._statsManager = new StatsManager({
-            onUpdate: () => {
-                if (this._statsManager.isCharging !== this._lastIsCharging) {
-                    if (this._statsManager.isCharging) {
-                        this._showOSD('battery', this._statsManager.batteryPercentage);
-                    }
-                    this._lastIsCharging = this._statsManager.isCharging;
-                }
-                if (this._isExpanded && (this._activeTab === 'stats' || this._activeTab === 'media' || this._activeTab === 'system')) {
-                    const now = GLib.get_monotonic_time();
-                    if (this._lastScrollTime && (now - this._lastScrollTime) < 1000000) return;
-                    
-                    if (this._activeTab === 'stats' || this._activeTab === 'system') {
-                        this._updateExpandedContent();
-                    }
-                }
-            }
-        });
-        this._statsManager.start();
-
-        // Volume Control
-        this._volumeControl = new Gvc.MixerControl({ name: 'Docktouch Volume' });
-        this._volumeControl.connect('state-changed', (c, state) => {
-            if (state === Gvc.MixerControlState.READY) this._setupVolumeStream();
-        });
-        this._volumeControl.connect('default-sink-changed', () => this._setupVolumeStream());
-        this._volumeControl.open();
-
-        // Brightness Proxy
-        this._brightnessProxy = new BrightnessProxy(
-            Gio.DBus.session,
-            'org.gnome.SettingsDaemon.Power',
-            '/org/gnome/SettingsDaemon/Power',
-            (p, error) => {
-                if (error) console.error("Docktouch: BrightnessProxy error: " + error);
-                else {
-                    const updateBrightness = () => {
-                        // Prioritize Percentage (0-100), fallback to Brightness
-                        let val = this._brightnessProxy.Percentage;
-                        if (val === undefined || val === null) val = this._brightnessProxy.Brightness;
-                        if (val !== undefined && val !== null) {
-                            // If it's a raw value > 100, we might need normalization, 
-                            // but usually Percentage is available on GNOME 45+
-                            this._showOSD('brightness', val);
-                        }
-                    };
-                    this._brightnessProxy.connect('notify::Brightness', updateBrightness);
-                    this._brightnessProxy.connect('notify::Percentage', updateBrightness);
-                    this._brightnessProxy.connect('g-properties-changed', updateBrightness);
-                    // Initial check
-                    updateBrightness();
-                }
-            }
-        );
-
+        this._isExpanded = false;
+        this._isRebuilding = false;
+        this._expandTimeoutId = null;
         this._osdTimeoutId = null;
-        this._sinkSignalId = null;
-        this._muteSignalId = null;
-        this._capsLockSignalId = null;
-        this._miniVisibilityTimerId = null;
-        this._isCapsLockActive = false;
-
         this._waveformTimerId = null;
+        this._miniVisibilityTimerId = null;
         this._calendarDate = GLib.DateTime.new_now_local();
+        this._lastScrollTime = 0;
+
+        // Properties needed by Tabs.js
+        this._volLabel = null;
+        this._volSlider = null;
+        this._mirrorVideoBin = null;
+        this._batteryIcon = null;
+        this._batteryLabel = null;
+        this._scrollView = null;
+        this._columns = null;
+        this._atollHeader = null;
+        this._tabButtons = {};
 
         this._buildUI();
-
-        // Caps Lock monitoring
-        try {
-            const seat = Clutter.get_default_backend().get_default_seat();
-            if (seat) {
-                this._keymap = seat.get_keymap();
-                if (this._keymap) {
-                    this._capsLockSignalId = this._keymap.connect('notify::caps-lock-state', () => {
-                        const state = this._keymap.get_caps_lock_state();
-                        this._showOSD('caps', state ? 100 : 0);
-                    });
-                    
-                    // Initial check
-                    const state = this._keymap.get_caps_lock_state();
-                    if (state) this._showOSD('caps', 100);
-                }
-            }
-        } catch (e) {
-            console.error("Docktouch: Caps Lock monitoring error: " + e);
-        }
-
-        this._setupSettingsListeners();
-        this._setupClipboardObserver();
-
-        // Session Mode monitoring
-        this._sessionModeSignalId = Main.sessionMode.connect('updated', () => {
-            this._updateSessionMode();
-        });
-        this._updateSessionMode();
-        
-        console.log('Docktouch (Modular) Enabled!');
     }
 
-    _saveClipboardHistory() {
-        this._settings.set_strv('clipboard-history', this._clipboardHistory);
-    }
-
-    _setupClipboardObserver() {
-        this._clipboard = St.Clipboard.get_default();
-        this._clipboardTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
-            this._clipboard.get_text(St.ClipboardType.CLIPBOARD, (clipboard, text) => {
-                if (text && text.trim() !== '' && text !== this._lastClipboardText) {
-                    this._lastClipboardText = text;
-                    // Check if already in history, if so remove and move to top
-                    const index = this._clipboardHistory.indexOf(text);
-                    if (index !== -1) this._clipboardHistory.splice(index, 1);
-                    
-                    this._clipboardHistory.unshift(text);
-                    if (this._clipboardHistory.length > 50) this._clipboardHistory.pop();
-                    this._saveClipboardHistory();
-                    
-                    if (this._isExpanded && this._activeTab === 'clipboard') {
-                        this._updateExpandedContent();
-                    }
-                }
-            });
-            return GLib.SOURCE_CONTINUE;
-        });
-    }
-
-    _setupSettingsListeners() {
-        ['normal-width', 'expanded-width', 'expanded-height', 'theme-color', 'pill-opacity', 'blur-sigma', 'island-mode',
-         'show-mpris', 'show-volume', 'show-stats', 'show-calendar', 'show-clipboard', 'hover-expand', 'hover-delay']
-        .forEach(setting => {
-            const id = this._settings.connect(`changed::${setting}`, () => {
-                if (setting.startsWith('show-')) {
-                    this._atollHeader = null;
-                    this._scrollView = null;
-                    this._columns = null;
-                    if (this._isExpanded) this._updateExpandedContent(true);
-                }
-                this._updateLayout();
-            });
-            this._signals.set(setting, id);
-        });
-    }
+    // Accessors for shared managers (used by Tabs.js via the dock instance)
+    get _systemInfo() { return this.extension._systemInfo; }
+    get _statsManager() { return this.extension._statsManager; }
+    get _playerManager() { return this.extension._playerManager; }
+    get _volumeControl() { return this.extension._volumeControl; }
+    get _sink() { return this.extension._sink; }
+    get _clipboardHistory() { return this.extension._clipboardHistory; }
+    set _clipboardHistory(val) { this.extension._clipboardHistory = val; }
+    get _lastClipboardText() { return this.extension._lastClipboardText; }
+    set _lastClipboardText(val) { this.extension._lastClipboardText = val; }
+    _saveClipboardHistory() { this.extension._saveClipboardHistory(); }
 
     _buildUI() {
         this._container = new St.Bin({
@@ -269,10 +142,6 @@ export default class DocktouchExtension extends Extension {
         this._content = new St.BoxLayout({ vertical: true, style_class: 'docktouch-content', opacity: 0, visible: false, x_expand: true });
         this._mainLayout.add_child(this._content);
 
-        this._isExpanded = false;
-        this._isRebuilding = false;
-        
-        this._expandTimeoutId = null;
         this._container.connect('enter-event', () => {
             if (!this._isExpanded) {
                 if (this._expandTimeoutId) GLib.source_remove(this._expandTimeoutId);
@@ -307,7 +176,7 @@ export default class DocktouchExtension extends Extension {
     }
 
     _updatePosition() {
-        const monitor = Main.layoutManager.primaryMonitor;
+        const monitor = this._monitor;
         const islandMode = this._settings.get_string('island-mode');
         let y = monitor.y;
         
@@ -401,24 +270,15 @@ export default class DocktouchExtension extends Extension {
         }
     }
 
-    _updateSessionMode() {
-        const isLocked = Main.sessionMode.isLocked;
-        if (isLocked) {
-            this._container.reactive = false;
-            this._showOSD('lock', 100);
-        } else {
-            this._container.reactive = true;
-            if (this._isCapsLockActive) {
-                this._showOSD('caps', 100);
-            } else {
-                this._showOSD('lock', 0);
-            }
-        }
-        this._updatePosition();
-    }
-
     _showOSD(type, value) {
-        if (this._isExpanded) return;
+        if (this._isExpanded && type !== 'lock') return;
+
+        if (this._isExpanded && type === 'lock') {
+            this._isExpanded = false;
+            this._content.visible = false;
+            this._header.visible = true;
+            this._updatePillStyle();
+        }
 
         const numericValue = typeof value === 'number' ? value : parseFloat(value);
         if (isNaN(numericValue)) return;
@@ -428,10 +288,6 @@ export default class DocktouchExtension extends Extension {
         const isCaps = type === 'caps';
         const isBattery = type === 'battery';
         const isLock = type === 'lock';
-
-        if (isCaps) {
-            this._isCapsLockActive = numericValue > 0;
-        }
 
         if (this._osdTimeoutId) {
             GLib.source_remove(this._osdTimeoutId);
@@ -516,7 +372,7 @@ export default class DocktouchExtension extends Extension {
         if (!isPillOnly) {
             this._osdTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
                 this._osdTimeoutId = null;
-                if (this._isCapsLockActive) {
+                if (this.extension._isCapsLockActive) {
                     // Se o Caps Lock ainda estiver ativo, volta para ele
                     this._showOSD('caps', 100);
                 } else if (Main.sessionMode.isLocked) {
@@ -532,40 +388,6 @@ export default class DocktouchExtension extends Extension {
                     });
                 }
                 return GLib.SOURCE_REMOVE;
-            });
-        }
-    }
-
-    _setupVolumeStream() {
-        if (this._sinkSignalId) {
-            this._sink?.disconnect(this._sinkSignalId);
-            this._sinkSignalId = null;
-        }
-        if (this._muteSignalId) {
-            this._sink?.disconnect(this._muteSignalId);
-            this._muteSignalId = null;
-        }
-
-        this._sink = this._volumeControl.get_default_sink();
-        if (this._sink) {
-            this._sinkSignalId = this._sink.connect('notify::volume', () => {
-                const maxVol = this._volumeControl.get_vol_max_norm();
-                const vol = (this._sink.volume / maxVol) * 100;
-                this._showOSD('volume', vol);
-
-                if (this._isExpanded && this._activeTab === 'system' && this._volSlider) {
-                    this._volSlider.value = vol / 100;
-                    if (this._volLabel) this._volLabel.text = `${Math.round(vol)}%`;
-                }
-            });
-            this._muteSignalId = this._sink.connect('notify::is-muted', () => {
-                const maxVol = this._volumeControl.get_vol_max_norm();
-                const vol = (this._sink.volume / maxVol) * 100;
-                this._showOSD('volume', vol);
-                
-                if (this._isExpanded && this._activeTab === 'system' && this._volSlider) {
-                    if (this._volLabel) this._volLabel.text = this._sink.is_muted ? 'MUTE' : `${Math.round(vol)}%`;
-                }
             });
         }
     }
@@ -603,6 +425,8 @@ export default class DocktouchExtension extends Extension {
     }
 
     _expand() {
+        if (Main.sessionMode.isLocked) return;
+        
         if (this._osdTimeoutId) {
             GLib.source_remove(this._osdTimeoutId);
             this._osdTimeoutId = null;
@@ -629,7 +453,6 @@ export default class DocktouchExtension extends Extension {
     _collapse() {
         this._isExpanded = false;
         this._header.visible = true;
-        this._stopProgressTimer();
         this._updatePillStyle();
 
         const islandMode = this._settings.get_string('island-mode');
@@ -642,7 +465,7 @@ export default class DocktouchExtension extends Extension {
             duration: 400, mode: Clutter.AnimationMode.EASE_OUT_QUART,
             onComplete: () => {
                 this._content.visible = false;
-                if (this._isCapsLockActive) {
+                if (this.extension._isCapsLockActive) {
                     this._showOSD('caps', 100);
                 } else {
                     this._updateMiniPlayerVisibility();
@@ -659,7 +482,6 @@ export default class DocktouchExtension extends Extension {
         if (!this._isExpanded) return;
 
         // Skip rebuild if user is scrolling or recently interacted (1s)
-        // Background updates should skip, but user actions (tabs/clicks) should force.
         if (!force) {
             const now = GLib.get_monotonic_time();
             if (this._lastScrollTime && (now - this._lastScrollTime) < 1000000) return;
@@ -785,23 +607,15 @@ export default class DocktouchExtension extends Extension {
             this._scrollView.add_child(this._columns);
         }
 
-        // Build current tab content only if enabled
+        // Build current tab content
         if (tabs.find(t => t.id === this._activeTab)) {
             if (this._activeTab === 'system') Tabs.buildSystemTab(this, this._columns);
             else if (this._activeTab === 'media') Tabs.buildMediaTab(this, this._columns);
             else if (this._activeTab === 'time') Tabs.buildTimeTab(this, this._columns);
             else if (this._activeTab === 'stats') Tabs.buildStatsTab(this, this._columns);
             else if (this._activeTab === 'clipboard') Tabs.buildClipboardTab(this, this._columns);
-        } else if (tabs.length === 0) {
-            this._columns.add_child(new St.Label({ 
-                text: 'Nenhuma funcionalidade ativada',
-                style: 'opacity: 0.5; margin: 40px;',
-                x_expand: true,
-                x_align: Clutter.ActorAlign.CENTER
-            }));
         }
 
-        // Restore scroll position with a small delay to ensure layout is updated
         if (vscroll > 0) {
             GLib.timeout_add(GLib.PRIORITY_DEFAULT, 25, () => {
                 if (this._scrollView && this._isExpanded) {
@@ -815,53 +629,23 @@ export default class DocktouchExtension extends Extension {
         this._isRebuilding = false;
     }
 
-    _stopProgressTimer() {
-        if (this._progressTimerId) { GLib.source_remove(this._progressTimerId); this._progressTimerId = null; }
-    }
-
-    _startProgressTimer() {
-        this._stopProgressTimer();
-        this._progressTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
-            if (this._isExpanded && this._activeTab === 'media') { this._updateMediaProgress(); return GLib.SOURCE_CONTINUE; }
-            this._progressTimerId = null; return GLib.SOURCE_REMOVE;
-        });
-    }
-
-    _updateMediaProgress() {
-        const player = this._playerManager.getActivePlayer();
-        if (!player?.proxy || !this._mediaProgress) return;
-        try {
-            let position = player.proxy.Position;
-            if (position instanceof GLib.Variant) position = position.recursiveUnpack();
-            let length = player.length || 0;
-            if (length > 0) {
-                let percent = Math.min(100, Math.max(0, (position / length) * 100));
-                let containerWidth = this._mediaProgress.get_parent()?.get_width() || 200;
-                this._mediaProgress.set_width(Math.max(1, (percent / 100) * containerWidth)); 
-                this._mediaTimeLabel.text = formatTime(position);
-                this._mediaTotalLabel.text = formatTime(length);
-            }
-        } catch (e) {}
-    }
-
-    // DnD (Repurposed for Clipboard)
     handleDragOver(source, actor, x, y, time) {
         if (!this._isExpanded) { this._activeTab = 'clipboard'; this._expand(); }
         else if (this._activeTab !== 'clipboard') { this._activeTab = 'clipboard'; this._updateExpandedContent(true); }
         return DND.DragMotionResult.COPY_DROP;
     }
 
-    acceptDrop(source, actor, x, y, time) {
+acceptDrop(source, actor, x, y, time) {
         let text = '';
         if (source.get_text) text = source.get_text();
         else if (source.uris) text = source.uris.join('\n');
         
         if (text && text.trim() !== '') {
-            const index = this._clipboardHistory.indexOf(text);
-            if (index !== -1) this._clipboardHistory.splice(index, 1);
-            this._clipboardHistory.unshift(text);
-            if (this._clipboardHistory.length > 50) this._clipboardHistory.pop();
-            this._saveClipboardHistory();
+            const index = this.extension._clipboardHistory.indexOf(text);
+            if (index !== -1) this.extension._clipboardHistory.splice(index, 1);
+            this.extension._clipboardHistory.unshift(text);
+            if (this.extension._clipboardHistory.length > 50) this.extension._clipboardHistory.pop();
+            this.extension._saveClipboardHistory();
             
             if (!this._isExpanded) this._expand();
             this._activeTab = 'clipboard';
@@ -871,9 +655,280 @@ export default class DocktouchExtension extends Extension {
         return false;
     }
 
-    disable() {
-        if (this._clipboardTimerId) { GLib.source_remove(this._clipboardTimerId); this._clipboardTimerId = null; }
+    destroy() {
         if (this._osdTimeoutId) { GLib.source_remove(this._osdTimeoutId); this._osdTimeoutId = null; }
+        if (this._waveformTimerId) { GLib.source_remove(this._waveformTimerId); this._waveformTimerId = null; }
+        if (this._miniVisibilityTimerId) { GLib.source_remove(this._miniVisibilityTimerId); this._miniVisibilityTimerId = null; }
+        if (this._expandTimeoutId) { GLib.source_remove(this._expandTimeoutId); this._expandTimeoutId = null; }
+        if (this._container) { 
+            Main.layoutManager.removeChrome(this._container); 
+            this._container.destroy(); 
+            this._container = null; 
+        }
+    }
+}
+
+export default class DocktouchExtension extends Extension {
+    enable() {
+        this._settings = this.getSettings();
+        this._signals = new Map();
+        this._docks = [];
+        
+        this._clipboardHistory = this._settings.get_strv('clipboard-history') || [];
+        this._lastClipboardText = this._clipboardHistory.length > 0 ? this._clipboardHistory[0] : '';
+
+        // Managers
+        this._systemInfo = getSystemInfo();
+        this._playerManager = new PlayerManager({
+            onUpdate: () => {
+                this._docks.forEach(dock => {
+                    if (dock._isExpanded && dock._activeTab === 'media') {
+                        const now = GLib.get_monotonic_time();
+                        if (dock._lastScrollTime && (now - dock._lastScrollTime) < 1000000) return;
+                        dock._updateExpandedContent();
+                    }
+                });
+            },
+            onMiniUpdate: () => this._docks.forEach(dock => dock._updateMiniPlayerVisibility())
+        });
+        this._playerManager.setup();
+
+        this._lastIsCharging = false;
+        this._statsManager = new StatsManager({
+            onUpdate: () => {
+                if (this._statsManager.isCharging !== this._lastIsCharging) {
+                    if (this._statsManager.isCharging) {
+                        this._showOSDAll('battery', this._statsManager.batteryPercentage);
+                    }
+                    this._lastIsCharging = this._statsManager.isCharging;
+                }
+                this._docks.forEach(dock => {
+                    if (dock._isExpanded && (dock._activeTab === 'stats' || dock._activeTab === 'media' || dock._activeTab === 'system')) {
+                        const now = GLib.get_monotonic_time();
+                        if (dock._lastScrollTime && (now - dock._lastScrollTime) < 1000000) return;
+                        
+                        if (dock._activeTab === 'stats' || dock._activeTab === 'system') {
+                            dock._updateExpandedContent();
+                        }
+                    }
+                });
+            }
+        });
+        this._statsManager.start();
+
+        // Volume Control
+        this._volumeControl = new Gvc.MixerControl({ name: 'Docktouch Volume' });
+        this._volumeControl.connect('state-changed', (c, state) => {
+            if (state === Gvc.MixerControlState.READY) this._setupVolumeStream();
+        });
+        this._volumeControl.connect('default-sink-changed', () => this._setupVolumeStream());
+        this._volumeControl.open();
+
+        // Brightness Proxy
+        this._brightnessProxy = new BrightnessProxy(
+            Gio.DBus.session,
+            'org.gnome.SettingsDaemon.Power',
+            '/org/gnome/SettingsDaemon/Power',
+            (p, error) => {
+                if (error) console.error("Docktouch: BrightnessProxy error: " + error);
+                else {
+                    const updateBrightness = () => {
+                        let val = this._brightnessProxy.Percentage;
+                        if (val === undefined || val === null) val = this._brightnessProxy.Brightness;
+                        if (val !== undefined && val !== null) {
+                            this._showOSDAll('brightness', val);
+                        }
+                    };
+                    this._brightnessProxy.connect('notify::Brightness', updateBrightness);
+                    this._brightnessProxy.connect('notify::Percentage', updateBrightness);
+                    this._brightnessProxy.connect('g-properties-changed', updateBrightness);
+                    updateBrightness();
+                }
+            }
+        );
+
+        this._sinkSignalId = null;
+        this._muteSignalId = null;
+        this._capsLockSignalId = null;
+        this._isCapsLockActive = false;
+
+        // Caps Lock monitoring
+        try {
+            const seat = Clutter.get_default_backend().get_default_seat();
+            if (seat) {
+                this._keymap = seat.get_keymap();
+                if (this._keymap) {
+                    this._capsLockSignalId = this._keymap.connect('notify::caps-lock-state', () => {
+                        const state = this._keymap.get_caps_lock_state();
+                        this._showOSDAll('caps', state ? 100 : 0);
+                    });
+                    
+                    const state = this._keymap.get_caps_lock_state();
+                    if (state) this._showOSDAll('caps', 100);
+                }
+            }
+        } catch (e) {
+            console.error("Docktouch: Caps Lock monitoring error: " + e);
+        }
+
+        this._setupSettingsListeners();
+        this._setupClipboardObserver();
+
+        // Session Mode monitoring
+        this._sessionModeSignalId = Main.sessionMode.connect('updated', () => {
+            this._updateSessionMode();
+        });
+        
+        this._buildDocks();
+        this._updateSessionMode();
+        
+        // Monitor changes
+        this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => this._buildDocks());
+        
+        console.log('Docktouch (Multi-Monitor) Enabled!');
+    }
+
+    _buildDocks() {
+        this._docks.forEach(dock => dock.destroy());
+        this._docks = [];
+
+        const displayMode = this._settings.get_string('display-mode');
+        if (displayMode === 'all') {
+            Main.layoutManager.monitors.forEach(monitor => {
+                this._docks.push(new Dock(this, monitor));
+            });
+        } else {
+            this._docks.push(new Dock(this, Main.layoutManager.primaryMonitor));
+        }
+    }
+
+    _showOSDAll(type, value) {
+        if (type === 'caps') this._isCapsLockActive = (value > 0);
+        this._docks.forEach(dock => dock._showOSD(type, value));
+    }
+
+    _saveClipboardHistory() {
+        this._settings.set_strv('clipboard-history', this._clipboardHistory);
+    }
+
+    _setupClipboardObserver() {
+        this._clipboard = St.Clipboard.get_default();
+        this._clipboardTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
+            this._clipboard.get_text(St.ClipboardType.CLIPBOARD, (clipboard, text) => {
+                if (text && text.trim() !== '' && text !== this._lastClipboardText) {
+                    this._lastClipboardText = text;
+                    const index = this._clipboardHistory.indexOf(text);
+                    if (index !== -1) this._clipboardHistory.splice(index, 1);
+                    
+                    this._clipboardHistory.unshift(text);
+                    if (this._clipboardHistory.length > 50) this._clipboardHistory.pop();
+                    this._saveClipboardHistory();
+                    
+                    this._docks.forEach(dock => {
+                        if (dock._isExpanded && dock._activeTab === 'clipboard') {
+                            dock._updateExpandedContent();
+                        }
+                    });
+                }
+            });
+            return GLib.SOURCE_CONTINUE;
+        });
+    }
+
+    _setupSettingsListeners() {
+        ['normal-width', 'expanded-width', 'expanded-height', 'theme-color', 'pill-opacity', 'blur-sigma', 'island-mode',
+         'show-mpris', 'show-volume', 'show-stats', 'show-calendar', 'show-clipboard', 'hover-expand', 'hover-delay', 'display-mode']
+        .forEach(setting => {
+            const id = this._settings.connect(`changed::${setting}`, () => {
+                if (setting === 'display-mode') {
+                    this._buildDocks();
+                    return;
+                }
+                if (setting.startsWith('show-')) {
+                    this._docks.forEach(dock => {
+                        dock._atollHeader = null;
+                        dock._scrollView = null;
+                        dock._columns = null;
+                        if (dock._isExpanded) dock._updateExpandedContent(true);
+                    });
+                }
+                this._docks.forEach(dock => dock._updateLayout());
+            });
+            this._signals.set(setting, id);
+        });
+    }
+
+    _updateSessionMode() {
+        const isLocked = Main.sessionMode.isLocked;
+        this._docks.forEach(dock => {
+            if (isLocked) {
+                if (dock._expandTimeoutId) {
+                    GLib.source_remove(dock._expandTimeoutId);
+                    dock._expandTimeoutId = null;
+                }
+                if (dock._isExpanded) {
+                    dock._collapse();
+                    dock._content.visible = false; // Hide immediately
+                }
+            }
+            dock._container.reactive = !isLocked;
+            if (isLocked) {
+                dock._showOSD('lock', 100);
+            } else {
+                if (this._isCapsLockActive) {
+                    dock._showOSD('caps', 100);
+                } else {
+                    dock._showOSD('lock', 0);
+                }
+            }
+            dock._updatePosition();
+        });
+    }
+
+    _setupVolumeStream() {
+        if (this._sinkSignalId) {
+            this._sink?.disconnect(this._sinkSignalId);
+            this._sinkSignalId = null;
+        }
+        if (this._muteSignalId) {
+            this._sink?.disconnect(this._muteSignalId);
+            this._muteSignalId = null;
+        }
+
+        this._sink = this._volumeControl.get_default_sink();
+        if (this._sink) {
+            this._sinkSignalId = this._sink.connect('notify::volume', () => {
+                const maxVol = this._volumeControl.get_vol_max_norm();
+                const vol = (this._sink.volume / maxVol) * 100;
+                this._showOSDAll('volume', vol);
+
+                this._docks.forEach(dock => {
+                    if (dock._isExpanded && dock._activeTab === 'system' && dock._volSlider) {
+                        dock._volSlider.value = vol / 100;
+                        if (dock._volLabel) dock._volLabel.text = `${Math.round(vol)}%`;
+                    }
+                });
+            });
+            this._muteSignalId = this._sink.connect('notify::is-muted', () => {
+                const maxVol = this._volumeControl.get_vol_max_norm();
+                const vol = (this._sink.volume / maxVol) * 100;
+                this._showOSDAll('volume', vol);
+                
+                this._docks.forEach(dock => {
+                    if (dock._isExpanded && dock._activeTab === 'system' && dock._volSlider) {
+                        if (dock._volLabel) dock._volLabel.text = this._sink.is_muted ? 'MUTE' : `${Math.round(vol)}%`;
+                    }
+                });
+            });
+        }
+    }
+
+    disable() {
+        if (this._monitorsChangedId) {
+            Main.layoutManager.disconnect(this._monitorsChangedId);
+            this._monitorsChangedId = null;
+        }
+        if (this._clipboardTimerId) { GLib.source_remove(this._clipboardTimerId); this._clipboardTimerId = null; }
         if (this._sinkSignalId) { this._sink?.disconnect(this._sinkSignalId); this._sinkSignalId = null; }
         if (this._muteSignalId) { this._sink?.disconnect(this._muteSignalId); this._muteSignalId = null; }
         if (this._capsLockSignalId && this._keymap) {
@@ -883,10 +938,6 @@ export default class DocktouchExtension extends Extension {
         }
         this._brightnessProxy = null;
 
-        this._stopProgressTimer();
-        if (this._waveformTimerId) { GLib.source_remove(this._waveformTimerId); this._waveformTimerId = null; }
-        if (this._miniVisibilityTimerId) { GLib.source_remove(this._miniVisibilityTimerId); this._miniVisibilityTimerId = null; }
-        if (this._expandTimeoutId) { GLib.source_remove(this._expandTimeoutId); this._expandTimeoutId = null; }
         if (this._sessionModeSignalId) {
             Main.sessionMode.disconnect(this._sessionModeSignalId);
             this._sessionModeSignalId = null;
@@ -894,7 +945,8 @@ export default class DocktouchExtension extends Extension {
         if (this._playerManager) this._playerManager.destroy();
         if (this._statsManager) this._statsManager.stop();
         this._signals.forEach(id => this._settings.disconnect(id));
-        if (this._container) { Main.layoutManager.removeChrome(this._container); this._container.destroy(); this._container = null; }
+        this._docks.forEach(dock => dock.destroy());
+        this._docks = [];
         if (this._volumeControl) { this._volumeControl.close(); this._volumeControl = null; }
     }
 }
