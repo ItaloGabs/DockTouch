@@ -2,7 +2,7 @@
 <schemalist>
   <schema id="org.gnome.shell.extensions.docktouch" path="/org/gnome/shell/extensions/docktouch/">
     <key name="normal-width" type="i">
-      <default>200</default>
+      <default>260</default>
       <summary>Normal width of the pill</summary>
     </key>
     <key name="expanded-width" type="i">
@@ -14,7 +14,7 @@
       <summary>Normal height of the pill</summary>
     </key>
     <key name="expanded-height" type="i">
-      <default>400</default>
+      <default>350</default>
       <summary>Expanded height of the pill</summary>
     </key>
     <key name="show-mpris" type="b">

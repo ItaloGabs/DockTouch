@@ -108,7 +108,7 @@ export default class DocktouchPreferences extends ExtensionPreferences {
         settings.bind('show-mpris', mprisSwitch, 'active', Gio.SettingsBindFlags.DEFAULT);
         featuresGroup.add(mprisSwitch);
 
-        const volumeSwitch = new Adw.SwitchRow({ title: 'Mostrar Controle de Volume' });
+        const volumeSwitch = new Adw.SwitchRow({ title: 'Mostrar Info do Sistema e Volume' });
         settings.bind('show-volume', volumeSwitch, 'active', Gio.SettingsBindFlags.DEFAULT);
         featuresGroup.add(volumeSwitch);
 

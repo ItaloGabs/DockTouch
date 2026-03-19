@@ -181,6 +181,9 @@ export default class DocktouchExtension extends Extension {
         .forEach(setting => {
             const id = this._settings.connect(`changed::${setting}`, () => {
                 if (setting.startsWith('show-')) {
+                    this._atollHeader = null;
+                    this._scrollView = null;
+                    this._columns = null;
                     if (this._isExpanded) this._updateExpandedContent(true);
                 }
                 this._updateLayout();
@@ -314,13 +317,7 @@ export default class DocktouchExtension extends Extension {
             if (!this._isExpanded) y += 4;
         }
 
-        let x;
-        if (Main.sessionMode.isLocked || this._isCapsLockActive) {
-            x = monitor.x + 20; // Alinhado à esquerda com margem
-        } else {
-            x = monitor.x + Math.floor((monitor.width - this._container.width) / 2);
-        }
-
+        const x = monitor.x + Math.floor((monitor.width - this._container.width) / 2);
         this._container.set_position(x, y);
     }
 
@@ -508,7 +505,7 @@ export default class DocktouchExtension extends Extension {
         this._osdContent.visible = true;
 
         // Expand pill for OSD
-        const osdWidth = isPillOnly ? 60 : (isBattery ? normalWidth : 220);
+        const osdWidth = isPillOnly ? normalWidth : (isBattery ? normalWidth : 220);
         this._container.ease({
             width: osdWidth,
             duration: 200,
@@ -555,11 +552,20 @@ export default class DocktouchExtension extends Extension {
                 const maxVol = this._volumeControl.get_vol_max_norm();
                 const vol = (this._sink.volume / maxVol) * 100;
                 this._showOSD('volume', vol);
+
+                if (this._isExpanded && this._activeTab === 'system' && this._volSlider) {
+                    this._volSlider.value = vol / 100;
+                    if (this._volLabel) this._volLabel.text = `${Math.round(vol)}%`;
+                }
             });
             this._muteSignalId = this._sink.connect('notify::is-muted', () => {
                 const maxVol = this._volumeControl.get_vol_max_norm();
                 const vol = (this._sink.volume / maxVol) * 100;
                 this._showOSD('volume', vol);
+                
+                if (this._isExpanded && this._activeTab === 'system' && this._volSlider) {
+                    if (this._volLabel) this._volLabel.text = this._sink.is_muted ? 'MUTE' : `${Math.round(vol)}%`;
+                }
             });
         }
     }
@@ -660,6 +666,19 @@ export default class DocktouchExtension extends Extension {
         }
 
         this._isRebuilding = true;
+
+        const tabs = [
+            { id: 'system', icon: 'system-run-symbolic', setting: 'show-volume' },
+            { id: 'media', icon: 'audio-x-generic-symbolic', setting: 'show-mpris' },
+            { id: 'time', icon: 'appointment-soon-symbolic', setting: 'show-calendar' },
+            { id: 'stats', icon: 'utilities-system-monitor-symbolic', setting: 'show-stats' },
+            { id: 'clipboard', icon: 'edit-copy-symbolic', setting: 'show-clipboard' }
+        ].filter(t => !t.setting || this._settings.get_boolean(t.setting));
+
+        if (tabs.length > 0 && !tabs.find(t => t.id === this._activeTab)) {
+            this._activeTab = tabs[0].id;
+        }
+
         let vscroll = 0;
         if (this._scrollView) {
             vscroll = this._scrollView.get_vscroll_bar().get_adjustment().get_value();
@@ -695,18 +714,6 @@ export default class DocktouchExtension extends Extension {
             const tabBar = new St.BoxLayout({ style_class: 'tab-bar' });
             this._tabButtons = {};
             
-            const tabs = [
-                { id: 'system', icon: 'system-run-symbolic', setting: 'show-volume' },
-                { id: 'media', icon: 'audio-x-generic-symbolic', setting: 'show-mpris' },
-                { id: 'time', icon: 'appointment-soon-symbolic', setting: 'show-calendar' },
-                { id: 'stats', icon: 'utilities-system-monitor-symbolic', setting: 'show-stats' },
-                { id: 'clipboard', icon: 'edit-copy-symbolic', setting: 'show-clipboard' }
-            ].filter(t => !t.setting || this._settings.get_boolean(t.setting));
-
-            if (tabs.length > 0 && !tabs.find(t => t.id === this._activeTab)) {
-                this._activeTab = tabs[0].id;
-            }
-
             tabs.forEach(tab => {
                 const btn = new St.Button({ 
                     child: new St.Icon({ icon_name: tab.icon, icon_size: 16 }),
@@ -778,12 +785,21 @@ export default class DocktouchExtension extends Extension {
             this._scrollView.add_child(this._columns);
         }
 
-        // Build current tab content
-        if (this._activeTab === 'system') Tabs.buildSystemTab(this, this._columns);
-        else if (this._activeTab === 'media') Tabs.buildMediaTab(this, this._columns);
-        else if (this._activeTab === 'time') Tabs.buildTimeTab(this, this._columns);
-        else if (this._activeTab === 'stats') Tabs.buildStatsTab(this, this._columns);
-        else if (this._activeTab === 'clipboard') Tabs.buildClipboardTab(this, this._columns);
+        // Build current tab content only if enabled
+        if (tabs.find(t => t.id === this._activeTab)) {
+            if (this._activeTab === 'system') Tabs.buildSystemTab(this, this._columns);
+            else if (this._activeTab === 'media') Tabs.buildMediaTab(this, this._columns);
+            else if (this._activeTab === 'time') Tabs.buildTimeTab(this, this._columns);
+            else if (this._activeTab === 'stats') Tabs.buildStatsTab(this, this._columns);
+            else if (this._activeTab === 'clipboard') Tabs.buildClipboardTab(this, this._columns);
+        } else if (tabs.length === 0) {
+            this._columns.add_child(new St.Label({ 
+                text: 'Nenhuma funcionalidade ativada',
+                style: 'opacity: 0.5; margin: 40px;',
+                x_expand: true,
+                x_align: Clutter.ActorAlign.CENTER
+            }));
+        }
 
         // Restore scroll position with a small delay to ensure layout is updated
         if (vscroll > 0) {
