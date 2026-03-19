@@ -1,0 +1,17 @@
+{
+  "uuid": "docktouch@italogabs.com",
+  "name": "Docktouch",
+  "description": "Uma ilha dinâmica inspirada no NotchNook.",
+  "shell-version": [
+    "45",
+    "46",
+    "47"
+  ],
+  "url": "https://github.com/ItaloGabs/DockTouch",
+  "settings-schema": "org.gnome.shell.extensions.docktouch",
+  "session-modes": [
+    "user",
+    "unlock-dialog"
+  ],
+  "version": 1
+}

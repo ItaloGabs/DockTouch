@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.docktouch" path="/org/gnome/shell/extensions/docktouch/">
+    <key name="normal-width" type="i">
+      <default>200</default>
+      <summary>Normal width of the pill</summary>
+    </key>
+    <key name="expanded-width" type="i">
+      <default>600</default>
+      <summary>Expanded width of the pill</summary>
+    </key>
+    <key name="normal-height" type="i">
+      <default>32</default>
+      <summary>Normal height of the pill</summary>
+    </key>
+    <key name="expanded-height" type="i">
+      <default>400</default>
+      <summary>Expanded height of the pill</summary>
+    </key>
+    <key name="show-mpris" type="b">
+      <default>true</default>
+      <summary>Show media player info</summary>
+    </key>
+    <key name="show-volume" type="b">
+      <default>true</default>
+      <summary>Show volume control</summary>
+    </key>
+    <key name="show-stats" type="b">
+      <default>true</default>
+      <summary>Show system statistics (CPU, RAM, GPU)</summary>
+    </key>
+    <key name="show-calendar" type="b">
+      <default>true</default>
+      <summary>Show calendar and time</summary>
+    </key>
+    <key name="show-clipboard" type="b">
+      <default>true</default>
+      <summary>Show clipboard history tab</summary>
+    </key>
+    <key name="hover-expand" type="b">
+      <default>true</default>
+      <summary>Expand pill on hover</summary>
+    </key>
+    <key name="hover-delay" type="d">
+      <default>0.5</default>
+      <summary>Delay in seconds to expand on hover</summary>
+    </key>
+    <key name="theme-color" type="s">
+      <default>'#000000'</default>
+      <summary>Pill background color</summary>
+    </key>
+    <key name="pill-opacity" type="i">
+      <default>240</default>
+      <summary>Pill background opacity (0-255)</summary>
+    </key>
+    <key name="blur-sigma" type="i">
+      <default>30</default>
+      <summary>Pill background blur intensity</summary>
+    </key>
+    <key name="island-mode" type="s">
+      <default>'standard'</default>
+      <summary>Island mode: 'dynamic' or 'standard'</summary>
+    </key>
+    <key name="clipboard-history" type="as">
+      <default>[]</default>
+      <summary>History of copied text items</summary>
+    </key>
+  </schema>
+</schemalist>
