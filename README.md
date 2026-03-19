@@ -18,26 +18,6 @@ Uma ilha dinâmica (Dynamic Island) elegante e funcional para o GNOME Shell, ins
 ## 🚀 Requisitos
 
 - GNOME Shell 45, 46 ou 47.
-- Distribuição Linux (testado em Fedora/Ubuntu/Arch).
-
-## 🛠️ Instalação
-
-Para instalar ou atualizar a extensão localmente:
-
-1. Clone este repositório:
-   ```bash
-   git clone https://github.com/ItaloGabs/DockTouch.git
-   cd DockTouch
-   ```
-
-2. Execute o comando de atualização (compila o schema e copia os arquivos):
-   ```bash
-   bash -c "$(cat 'comand edit')"
-   ```
-
-3. Reinicie o GNOME Shell (Alt+F2, digite 'r' e Enter no X11, ou faça logout/login no Wayland).
-
-4. Ative a extensão através do aplicativo **GNOME Extensions** ou **Extension Manager**.
 
 ## ⚙️ Configurações
 
