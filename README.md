@@ -2,6 +2,10 @@
 
 Uma ilha dinâmica (Dynamic Island) elegante e funcional para o GNOME Shell, inspirada no NotchNook. O Docktouch traz informações essenciais e controles rápidos diretamente para o topo da sua tela em uma interface moderna e fluida.
 
+![Captura de tela](media/Captura%20de%20tela%20de%202026-03-20%2010-44-56.png)
+
+https://github.com/ItaloGabs/DockTouch/raw/main/media/Grava%C3%A7%C3%A3o%20de%20tela%20de%202026-03-20%2010-42-47.webm
+
 ## ✨ Funcionalidades
 
 - **🎵 Media Player:** Controle de reprodução (MPRIS) com visualização de capa de álbum e waveform animada.
@@ -18,6 +22,26 @@ Uma ilha dinâmica (Dynamic Island) elegante e funcional para o GNOME Shell, ins
 ## 🚀 Requisitos
 
 - GNOME Shell 45, 46 ou 47.
+- Distribuição Linux (testado em Fedora/Ubuntu/Arch).
+
+## 🛠️ Instalação
+
+Para instalar ou atualizar a extensão localmente:
+
+1. Clone este repositório:
+   ```bash
+   git clone https://github.com/ItaloGabs/DockTouch.git
+   cd DockTouch
+   ```
+
+2. Execute o comando de atualização (compila o schema e copia os arquivos):
+   ```bash
+   bash -c "$(cat 'comand edit')"
+   ```
+
+3. Reinicie o GNOME Shell (Alt+F2, digite 'r' e Enter no X11, ou faça logout/login no Wayland).
+
+4. Ative a extensão através do aplicativo **GNOME Extensions** ou **Extension Manager**.
 
 ## ⚙️ Configurações
 
