@@ -4,7 +4,7 @@ Uma ilha dinâmica (Dynamic Island) elegante e funcional para o GNOME Shell, ins
 
 ![Captura de tela](media/Captura%20de%20tela%20de%202026-03-20%2010-44-56.png)
 
-https://github.com/ItaloGabs/DockTouch/raw/main/media/Grava%C3%A7%C3%A3o%20de%20tela%20de%202026-03-20%2010-42-47.webm
+<video src="https://github.com/ItaloGabs/DockTouch/raw/main/media/Grava%C3%A7%C3%A3o%20de%20tela%20de%202026-03-20%2010-42-47.webm" width="100%" controls></video>
 
 ## ✨ Funcionalidades
 
