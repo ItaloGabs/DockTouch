@@ -21,6 +21,7 @@ const BrightnessProxy = Gio.DBusProxy.makeProxyWrapper(BrightnessIface);
 import { getSystemInfo, formatTime, getBatteryIcon } from './lib/utils.js';
 import { PlayerManager } from './lib/mpris.js';
 import { StatsManager } from './lib/stats.js';
+import { TimerManager } from './lib/timer.js';
 import * as Tabs from './lib/tabs.js';
 
 class Dock {
@@ -36,6 +37,8 @@ class Dock {
         this._osdTimeoutId = null;
         this._waveformTimerId = null;
         this._miniVisibilityTimerId = null;
+        this._playerVisibilityExpired = false;
+        this._lastTrack = '';
         this._calendarDate = GLib.DateTime.new_now_local();
         this._lastScrollTime = 0;
 
@@ -45,6 +48,7 @@ class Dock {
         this._mirrorVideoBin = null;
         this._batteryIcon = null;
         this._batteryLabel = null;
+        this._headerClockLabel = null;
         this._scrollView = null;
         this._columns = null;
         this._atollHeader = null;
@@ -57,6 +61,7 @@ class Dock {
     get _systemInfo() { return this.extension._systemInfo; }
     get _statsManager() { return this.extension._statsManager; }
     get _playerManager() { return this.extension._playerManager; }
+    get _timerManager() { return this.extension._timerManager; }
     get _volumeControl() { return this.extension._volumeControl; }
     get _sink() { return this.extension._sink; }
     get _clipboardHistory() { return this.extension._clipboardHistory; }
@@ -115,6 +120,48 @@ class Dock {
             this._waveform.add_child(bar);
         });
         this._miniContent.add_child(this._waveform);
+
+        // Timer Elements in Mini Content
+        this._miniTimerIcon = new St.Icon({ 
+            icon_name: 'appointment-soon-symbolic', 
+            style_class: 'mini-timer-icon',
+            visible: false,
+            icon_size: 16,
+            y_align: Clutter.ActorAlign.CENTER
+        });
+        this._miniContent.add_child(this._miniTimerIcon);
+
+        this._miniTimerLabel = new St.Label({ 
+            style_class: 'mini-timer-label',
+            visible: false,
+            y_align: Clutter.ActorAlign.CENTER
+        });
+        this._miniContent.add_child(this._miniTimerLabel);
+
+        this._miniLockIcon = new St.Icon({ 
+            icon_name: 'system-lock-screen-symbolic', 
+            style_class: 'mini-lock-icon',
+            visible: false,
+            icon_size: 16,
+            y_align: Clutter.ActorAlign.CENTER
+        });
+        this._miniContent.add_child(this._miniLockIcon);
+
+        this._miniTimeLabel = new St.Label({ 
+            style_class: 'mini-time-label',
+            visible: false,
+            y_align: Clutter.ActorAlign.CENTER
+        });
+        this._miniContent.add_child(this._miniTimeLabel);
+
+        this._miniCapsLockIcon = new St.Icon({ 
+            icon_name: 'keyboard-caps-lock-symbolic', 
+            style_class: 'mini-caps-icon',
+            visible: false,
+            icon_size: 16,
+            y_align: Clutter.ActorAlign.CENTER
+        });
+        this._miniContent.add_child(this._miniCapsLockIcon);
 
         // OSD CONTENT
         this._osdContent = new St.BoxLayout({ style_class: 'osd-content', visible: false, x_expand: true });
@@ -181,7 +228,7 @@ class Dock {
         let y = monitor.y;
         
         if (islandMode === 'standard') {
-            if (!this._isExpanded) y -= 2;
+            if (!this._isExpanded) y -= 1.5;
         } else {
             if (!this._isExpanded) y += 4;
         }
@@ -203,58 +250,144 @@ class Dock {
     }
 
     _updateMiniPlayerVisibility() {
-        if (!this._miniContent || this._osdContent?.visible) return;
+        if (!this._miniContent || this._osdTimeoutId) return;
+        if (this._osdContent?.visible && Main.sessionMode.isLocked) return;
+        
         const player = this._playerManager.getActivePlayer();
         const playbackStatus = player?.proxy?.PlaybackStatus;
         const isPlaying = playbackStatus === 'Playing';
         const isPaused = playbackStatus === 'Paused';
+        const isCaps = this.extension._isCapsLockActive;
+        const timerActive = this._timerManager.isActive;
+        const isLocked = Main.sessionMode.isLocked;
 
-        if (isPlaying || isPaused) {
-            if (isPaused) {
-                this._desaturateEffect.enabled = true;
-                if (this._waveformTimerId) {
-                    GLib.source_remove(this._waveformTimerId);
-                    this._waveformTimerId = null;
-                }
-                if (!this._miniVisibilityTimerId) {
-                    this._miniVisibilityTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 20000, () => {
-                        this._miniContent.visible = false;
-                        this._miniVisibilityTimerId = null;
-                        return GLib.SOURCE_REMOVE;
-                    });
-                }
-            } else {
-                if (this._miniVisibilityTimerId) {
-                    GLib.source_remove(this._miniVisibilityTimerId);
-                    this._miniVisibilityTimerId = null;
-                }
-                this._miniContent.visible = true;
-                this._desaturateEffect.enabled = false;
+        const currentTrack = player ? `${player.title}-${player.artist}` : "";
+        if (currentTrack !== this._lastTrack || isPlaying) {
+            this._playerVisibilityExpired = false;
+            this._lastTrack = currentTrack;
+        }
 
-                if (!this._waveformTimerId) {
-                    this._waveformTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
-                        if (this._waveformBars?.length > 0) {
-                            this._waveformBars.forEach(bar => bar.set_height(4 + Math.random() * 12));
-                            return GLib.SOURCE_CONTINUE;
-                        }
+        // Reset visibility of all special elements
+        this._waveform.visible = false;
+        this._miniCapsLockIcon.visible = false;
+        this._miniTimerIcon.visible = false;
+        this._miniTimerLabel.visible = false;
+        this._miniLockIcon.visible = false;
+        this._miniTimeLabel.visible = false;
+
+        if (isPlaying || (isPaused && !this._playerVisibilityExpired && !isCaps) || timerActive || isLocked) {
+            this._miniContent.visible = true;
+            
+            if (isLocked) {
+                this._miniIconContainer.visible = true;
+                this._miniIconContainer.set_style('');
+                this._miniIcon.visible = true;
+                this._miniIcon.icon_name = 'system-lock-screen-symbolic';
+                this._miniIcon.set_style('color: white;');
+
+                this._miniTimeLabel.visible = true;
+                this._miniTimeLabel.set_style('color: white;');
+                const now = GLib.DateTime.new_now_local();
+                const timeStr = now.format('%H:%M');
+                if (timerActive) {
+                    const timerText = this._timerManager._timerActive ? this._timerManager.timerText : this._timerManager.alarmText;
+                    this._miniTimeLabel.text = `${timerText} | ${timeStr}`;
+                } else {
+                    this._miniTimeLabel.text = timeStr;
+                }
+            } else if (isPlaying || (isPaused && !this._playerVisibilityExpired)) {
+                this._miniIconContainer.visible = true;
+                this._miniIcon.visible = true;
+                this._miniIcon.icon_name = 'audio-x-generic-symbolic';
+                
+                if (isPaused) {
+                    this._desaturateEffect.enabled = true;
+                    if (this._waveformTimerId) {
+                        GLib.source_remove(this._waveformTimerId);
                         this._waveformTimerId = null;
-                        return GLib.SOURCE_REMOVE;
-                    });
-                }
-            }
+                    }
+                    if (!this._miniVisibilityTimerId) {
+                        this._miniVisibilityTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 20000, () => {
+                            this._miniVisibilityTimerId = null;
+                            this._playerVisibilityExpired = true;
+                            if (!this._timerManager.isActive) {
+                                this._miniContent.visible = false;
+                            } else {
+                                // Keep visible but art will be hidden by next update call
+                                this._updateMiniPlayerVisibility();
+                            }
+                            if (this.extension._isCapsLockActive && !this._timerManager.isActive) {
+                                this._showOSD('caps', 100);
+                            }
+                            return GLib.SOURCE_REMOVE;
+                        });
+                    }
+                } else {
+                    if (this._miniVisibilityTimerId) {
+                        GLib.source_remove(this._miniVisibilityTimerId);
+                        this._miniVisibilityTimerId = null;
+                    }
+                    this._desaturateEffect.enabled = false;
 
-            if (player) {
-                if (player.artUrl) {
+                    if (!this._waveformTimerId) {
+                        this._waveformTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+                            if (this._waveformBars?.length > 0) {
+                                this._waveformBars.forEach(bar => bar.set_height(4 + Math.random() * 12));
+                                return GLib.SOURCE_CONTINUE;
+                            }
+                            this._waveformTimerId = null;
+                            return GLib.SOURCE_REMOVE;
+                        });
+                    }
+                }
+
+                let color = player && player.artUrl ? (this._getAverageColor(player.artUrl) || 'white') : 'white';
+                if (isPaused) color = 'rgba(255, 255, 255, 0.4)';
+                
+                // Show indicators on the right
+                if (isCaps) {
+                    this._miniCapsLockIcon.visible = true;
+                    this._miniCapsLockIcon.set_style(`color: ${color};`);
+                }
+
+                if (timerActive) {
+                    this._miniTimerIcon.visible = true;
+                    this._miniTimerLabel.visible = true;
+                    this._miniTimerLabel.text = this._timerManager._timerActive ? this._timerManager.timerText : this._timerManager.alarmText;
+                    this._miniTimerIcon.set_style(`color: ${color};`);
+                    this._miniTimerLabel.set_style(`color: ${color};`);
+                } else if (!isCaps) {
+                    // Restore: Show waves even when paused (frozen), if no timer and no caps
+                    this._waveform.visible = true;
+                    this._waveformBars.forEach(bar => bar.set_style(`background-color: ${color};`));
+                }
+
+                if (player && player.artUrl) {
                     const escapedUrl = player.artUrl.replace(/"/g, '\\"');
                     this._miniIconContainer.set_style(`background-image: url("${escapedUrl}"); background-size: cover; border-radius: 6px;`);
                     this._miniIcon.visible = false;
-
-                    const color = this._getAverageColor(player.artUrl) || 'white';
-                    this._waveformBars.forEach(bar => bar.set_style(`background-color: ${color};`));
                 } else {
                     this._miniIconContainer.set_style('');
                     this._miniIcon.visible = true;
-                    this._waveformBars.forEach(bar => bar.set_style(''));
+                    this._miniIcon.set_style(`color: ${color};`);
+                    if (!player?.artUrl) this._waveformBars.forEach(bar => bar.set_style(''));
+                }
+            } else if (timerActive) {
+                // No music, but timer active
+                // Icon on LEFT, Time on RIGHT
+                this._miniIconContainer.visible = true;
+                this._miniIconContainer.set_style('');
+                this._miniIcon.visible = true;
+                this._miniIcon.icon_name = 'appointment-soon-symbolic';
+                this._miniIcon.set_style('color: white;');
+                
+                this._miniTimerLabel.visible = true;
+                this._miniTimerLabel.text = this._timerManager._timerActive ? this._timerManager.timerText : this._timerManager.alarmText;
+                this._miniTimerLabel.set_style('color: white;');
+                
+                if (isCaps) {
+                    this._miniCapsLockIcon.visible = true;
+                    this._miniCapsLockIcon.set_style('color: white;');
                 }
             }
         } else {
@@ -267,6 +400,31 @@ class Dock {
                 GLib.source_remove(this._waveformTimerId);
                 this._waveformTimerId = null;
             }
+            if (this.extension._isCapsLockActive && !Main.sessionMode.isLocked) {
+                this._showOSD('caps', 100);
+            }
+        }
+    }
+
+    _updateTimerUI() {
+        this._updateMiniPlayerVisibility();
+        if (this._isExpanded && this._activeTab === 'time') {
+            if (this._timerLabel) {
+                this._timerLabel.text = this._timerManager._timerActive ? this._timerManager.timerText : (this._timerManager._timerSeconds > 0 ? `${this._timerManager.timerText} (Pausado)` : 'Inativo');
+            }
+            if (this._timerPauseBtn) {
+                this._timerPauseBtn.visible = this._timerManager._timerActive;
+            }
+            if (this._timerResumeBtn) {
+                this._timerResumeBtn.visible = !this._timerManager._timerActive && this._timerManager._timerSeconds > 0;
+            }
+            if (this._alarmStatusLabel) {
+                this._alarmStatusLabel.text = this._timerManager._alarmActive ? `Ativo para ${this._timerManager.alarmText}` : 'Inativo';
+            }
+            if (this._bigClockLabel) {
+                const now = GLib.DateTime.new_now_local();
+                this._bigClockLabel.text = now.format('%H:%M:%S');
+            }
         }
     }
 
@@ -276,8 +434,11 @@ class Dock {
         if (this._isExpanded && type === 'lock') {
             this._isExpanded = false;
             this._content.visible = false;
+            this._content.opacity = 0;
             this._header.visible = true;
+            this._header.opacity = 255;
             this._updatePillStyle();
+            this._updateLayout();
         }
 
         const numericValue = typeof value === 'number' ? value : parseFloat(value);
@@ -298,6 +459,10 @@ class Dock {
 
         // Se for Caps Lock ou Lock e estiver desativado, ocultar se estiver mostrando e não houver outro OSD ativo
         if ((isCaps || isLock) && numericValue === 0) {
+            if (Main.sessionMode.isLocked && isCaps) {
+                this._showOSD('lock', 100);
+                return;
+            }
             this._osdContent.visible = false;
             this._updateMiniPlayerVisibility();
             this._container.ease({
@@ -306,6 +471,23 @@ class Dock {
                 mode: Clutter.AnimationMode.EASE_OUT_QUART
             });
             return;
+        }
+
+        // Se estiver tocando música ou o temporizador estiver ativo e for Caps Lock, mostrar no mini player em vez do OSD completo
+        if (isCaps && !Main.sessionMode.isLocked) {
+            const player = this._playerManager.getActivePlayer();
+            const playbackStatus = player?.proxy?.PlaybackStatus;
+            const timerActive = this._timerManager.isActive;
+            if (playbackStatus === 'Playing' || timerActive) {
+                this._osdContent.visible = false;
+                this._updateMiniPlayerVisibility();
+                this._container.ease({
+                    width: normalWidth,
+                    duration: 200,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUART
+                });
+                return;
+            }
         }
 
         let iconName = isVolume ? 'audio-volume-high-symbolic' : 
@@ -568,6 +750,29 @@ class Dock {
             });
             indicators.add_child(mirrorBtn);
 
+            this._headerClockLabel = new St.Label({
+                style_class: 'header-clock-label',
+                y_align: Clutter.ActorAlign.CENTER,
+                style: 'margin-right: 8px; font-weight: bold;'
+            });
+            indicators.add_child(this._headerClockLabel);
+
+            // Update clock every minute
+            const updateClock = () => {
+                if (this._headerClockLabel) {
+                    const now = GLib.DateTime.new_now_local();
+                    this._headerClockLabel.text = now.format('%H:%M');
+                }
+            };
+            updateClock();
+            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 60, () => {
+                if (this._headerClockLabel && this._headerClockLabel.get_stage()) {
+                    updateClock();
+                    return GLib.SOURCE_CONTINUE;
+                }
+                return GLib.SOURCE_REMOVE;
+            });
+
             const percentage = this._statsManager.batteryPercentage;
             const isCharging = this._statsManager.isCharging;
             this._batteryIcon = new St.Icon({ 
@@ -679,6 +884,15 @@ export default class DocktouchExtension extends Extension {
 
         // Managers
         this._systemInfo = getSystemInfo();
+        
+        this._timerManager = new TimerManager({
+            onUpdate: () => {
+                this._docks.forEach(dock => {
+                    if (dock._updateTimerUI) dock._updateTimerUI();
+                });
+            }
+        });
+
         this._playerManager = new PlayerManager({
             onUpdate: () => {
                 this._docks.forEach(dock => {
@@ -867,14 +1081,20 @@ export default class DocktouchExtension extends Extension {
                     dock._expandTimeoutId = null;
                 }
                 if (dock._isExpanded) {
-                    dock._collapse();
-                    dock._content.visible = false; // Hide immediately
+                    dock._isExpanded = false;
+                    dock._content.visible = false;
+                    dock._content.opacity = 0;
+                    dock._header.visible = true;
+                    dock._header.opacity = 255;
+                    dock._updateLayout();
                 }
             }
             dock._container.reactive = !isLocked;
-            if (isLocked) {
-                dock._showOSD('lock', 100);
-            } else {
+            
+            // Re-trigger mini player visibility update to handle lock screen state
+            dock._updateMiniPlayerVisibility();
+            
+            if (!isLocked) {
                 if (this._isCapsLockActive) {
                     dock._showOSD('caps', 100);
                 } else {
