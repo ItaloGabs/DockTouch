@@ -77,14 +77,14 @@ class Dock {
             track_hover: true,
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.START,
-            clip_to_allocation: true,
+            clip_to_allocation: false,
         });
         this._container._delegate = this;
 
         this._blurEffect = new Shell.BlurEffect({ brightness: 0.6, mode: Shell.BlurMode.BACKGROUND });
         this._container.add_effect(this._blurEffect);
 
-        this._mainLayout = new St.BoxLayout({ vertical: true, x_expand: true, y_expand: true, reactive: true });
+        this._mainLayout = new St.BoxLayout({ vertical: true, x_expand: true, y_expand: true, reactive: true, clip_to_allocation: false });
         this._container.set_child(this._mainLayout);
 
         // COLLAPSED HEADER
@@ -93,16 +93,18 @@ class Dock {
             x_align: Clutter.ActorAlign.FILL,
             y_align: Clutter.ActorAlign.CENTER,
             height: 38,
+            clip_to_allocation: false,
         });
         this._mainLayout.add_child(this._header);
 
-        this._miniContent = new St.BoxLayout({ style_class: 'mini-content', x_expand: true });
+        this._miniContent = new St.BoxLayout({ style_class: 'mini-content', x_expand: true, clip_to_allocation: false });
         this._header.add_child(this._miniContent);
 
         this._miniIconContainer = new St.Bin({ 
             style_class: 'mini-player-icon-container',
             y_align: Clutter.ActorAlign.CENTER,
-            width: 22, height: 22
+            width: 22, height: 22,
+            clip_to_allocation: false,
         });
         this._desaturateEffect = new Clutter.DesaturateEffect({ enabled: false });
         this._miniIconContainer.add_effect(this._desaturateEffect);
@@ -186,7 +188,7 @@ class Dock {
         this._osdContent.add_child(this._osdValueLabel);
 
         // EXPANDED CONTENT
-        this._content = new St.BoxLayout({ vertical: true, style_class: 'docktouch-content', opacity: 0, visible: false, x_expand: true });
+        this._content = new St.BoxLayout({ vertical: true, style_class: 'docktouch-content', opacity: 0, visible: false, x_expand: true, clip_to_allocation: false });
         this._mainLayout.add_child(this._content);
 
         this._container.connect('enter-event', () => {
@@ -290,10 +292,19 @@ class Dock {
                 const now = GLib.DateTime.new_now_local();
                 const timeStr = now.format('%H:%M');
                 if (timerActive) {
-                    const timerText = this._timerManager._timerActive ? this._timerManager.timerText : this._timerManager.alarmText;
+                    const timerText = this._timerManager.currentText;
                     this._miniTimeLabel.text = `${timerText} | ${timeStr}`;
+                    if (this._timerManager._isRinging) {
+                        this._miniTimeLabel.add_style_class_name('blink');
+                        this._miniIcon.add_style_class_name('blink');
+                    } else {
+                        this._miniTimeLabel.remove_style_class_name('blink');
+                        this._miniIcon.remove_style_class_name('blink');
+                    }
                 } else {
                     this._miniTimeLabel.text = timeStr;
+                    this._miniTimeLabel.remove_style_class_name('blink');
+                    this._miniIcon.remove_style_class_name('blink');
                 }
             } else if (isPlaying || (isPaused && !this._playerVisibilityExpired)) {
                 this._miniIconContainer.visible = true;
@@ -351,11 +362,20 @@ class Dock {
                 }
 
                 if (timerActive) {
+                    const timerText = this._timerManager.currentText;
                     this._miniTimerIcon.visible = true;
                     this._miniTimerLabel.visible = true;
-                    this._miniTimerLabel.text = this._timerManager._timerActive ? this._timerManager.timerText : this._timerManager.alarmText;
+                    this._miniTimerLabel.text = timerText;
                     this._miniTimerIcon.set_style(`color: ${color};`);
                     this._miniTimerLabel.set_style(`color: ${color};`);
+
+                    if (this._timerManager._isRinging) {
+                        this._miniTimerIcon.add_style_class_name('blink');
+                        this._miniTimerLabel.add_style_class_name('blink');
+                    } else {
+                        this._miniTimerIcon.remove_style_class_name('blink');
+                        this._miniTimerLabel.remove_style_class_name('blink');
+                    }
                 } else if (!isCaps) {
                     // Restore: Show waves even when paused (frozen), if no timer and no caps
                     this._waveform.visible = true;
@@ -382,8 +402,16 @@ class Dock {
                 this._miniIcon.set_style('color: white;');
                 
                 this._miniTimerLabel.visible = true;
-                this._miniTimerLabel.text = this._timerManager._timerActive ? this._timerManager.timerText : this._timerManager.alarmText;
+                this._miniTimerLabel.text = this._timerManager.currentText;
                 this._miniTimerLabel.set_style('color: white;');
+
+                if (this._timerManager._isRinging) {
+                    this._miniIcon.add_style_class_name('blink');
+                    this._miniTimerLabel.add_style_class_name('blink');
+                } else {
+                    this._miniIcon.remove_style_class_name('blink');
+                    this._miniTimerLabel.remove_style_class_name('blink');
+                }
                 
                 if (isCaps) {
                     this._miniCapsLockIcon.visible = true;
@@ -410,7 +438,15 @@ class Dock {
         this._updateMiniPlayerVisibility();
         if (this._isExpanded && this._activeTab === 'time') {
             if (this._timerLabel) {
-                this._timerLabel.text = this._timerManager._timerActive ? this._timerManager.timerText : (this._timerManager._timerSeconds > 0 ? `${this._timerManager.timerText} (Pausado)` : 'Inativo');
+                if (this._timerManager._timerRinging) {
+                    this._timerLabel.text = '0:00 - ACABOU!';
+                    this._timerLabel.set_style('color: #FF453A; font-weight: bold;');
+                    this._timerLabel.add_style_class_name('blink');
+                } else {
+                    this._timerLabel.text = this._timerManager._timerActive ? this._timerManager.timerText : (this._timerManager._timerSeconds > 0 ? `${this._timerManager.timerText} (Pausado)` : 'Inativo');
+                    this._timerLabel.set_style('');
+                    this._timerLabel.remove_style_class_name('blink');
+                }
             }
             if (this._timerPauseBtn) {
                 this._timerPauseBtn.visible = this._timerManager._timerActive;
@@ -419,7 +455,17 @@ class Dock {
                 this._timerResumeBtn.visible = !this._timerManager._timerActive && this._timerManager._timerSeconds > 0;
             }
             if (this._alarmStatusLabel) {
-                this._alarmStatusLabel.text = this._timerManager._alarmActive ? `Ativo para ${this._timerManager.alarmText}` : 'Inativo';
+                if (this._timerManager._alarmRinging) {
+                    this._alarmStatusLabel.text = `${this._timerManager.alarmText} - HORÁRIO ATINGIDO!`;
+                    this._alarmStatusLabel.set_style('color: #FF453A; font-weight: bold;');
+                    this._alarmStatusLabel.add_style_class_name('blink');
+                    if (this._stopAlarmBtn) this._stopAlarmBtn.label = 'Parar';
+                } else {
+                    this._alarmStatusLabel.text = this._timerManager._alarmActive ? `Ativo para ${this._timerManager.alarmText}` : 'Inativo';
+                    this._alarmStatusLabel.set_style('');
+                    this._alarmStatusLabel.remove_style_class_name('blink');
+                    if (this._stopAlarmBtn) this._stopAlarmBtn.label = 'Desativar';
+                }
             }
             if (this._bigClockLabel) {
                 const now = GLib.DateTime.new_now_local();
@@ -587,9 +633,18 @@ class Dock {
             rgbaColor = `rgba(${r}, ${g}, ${b}, ${pillOpacity / 255})`;
         }
 
-        let shadow = this._isExpanded ? 'box-shadow: 0 10px 35px rgba(0,0,0,0.5);' : (islandMode !== 'standard' ? 'box-shadow: 0 2px 8px rgba(0,0,0,0.3);' : 'box-shadow: none;');
+        this._container.remove_style_class_name('shadow-expanded');
+        this._container.remove_style_class_name('shadow-collapsed');
 
-        this._container.set_style(`padding-top: ${marginTop}px; border-radius: ${borderRadius}; background-color: ${rgbaColor} !important; ${shadow} border: 1px solid rgba(255, 255, 255, 0.1);`);
+        if (this._isExpanded) {
+            this._container.add_style_class_name('shadow-expanded');
+        } else if (islandMode !== 'standard') {
+            this._container.add_style_class_name('shadow-collapsed');
+        }
+
+        this._container.set_style(`padding-top: ${marginTop}px; border-radius: ${borderRadius}; background-color: ${rgbaColor} !important; border: 1px solid rgba(255, 255, 255, 0.1);`);
+        this._container.queue_relayout();
+        if (global.stage) global.stage.queue_redraw();
     }
 
     _updateLayout() {
@@ -891,7 +946,7 @@ export default class DocktouchExtension extends Extension {
                     if (dock._updateTimerUI) dock._updateTimerUI();
                 });
             }
-        });
+        }, this.path);
 
         this._playerManager = new PlayerManager({
             onUpdate: () => {
