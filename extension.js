@@ -138,6 +138,9 @@ export default class DocktouchExtension extends Extension {
         if (Main.panel.statusArea.remoteAccess) {
             this._remoteAccessSignalId = Main.panel.statusArea.remoteAccess.connect('notify::visible', () => this._updateScreenState());
         }
+        if (Main.panel.statusArea['remote-access']) {
+            this._remoteAccessAltSignalId = Main.panel.statusArea['remote-access'].connect('notify::visible', () => this._updateScreenState());
+        }
         this._updateScreenState();
 
         // Caps Lock monitoring
@@ -218,7 +221,7 @@ export default class DocktouchExtension extends Extension {
     _updateScreenState() {
         const isRecording = Main.panel.statusArea.screenRecording?.visible || false;
         const isSharing = Main.panel.statusArea.screenSharing?.visible || false;
-        const isRemote = Main.panel.statusArea.remoteAccess?.visible || false;
+        const isRemote = (Main.panel.statusArea.remoteAccess?.visible || Main.panel.statusArea['remote-access']?.visible) || false;
         const active = isRecording || isSharing || isRemote;
 
         if (this._isScreenActive !== active || this._isScreenRecording !== isRecording || this._isScreenSharing !== (isSharing || isRemote)) {
@@ -383,6 +386,10 @@ export default class DocktouchExtension extends Extension {
         if (this._remoteAccessSignalId && Main.panel.statusArea.remoteAccess) {
             Main.panel.statusArea.remoteAccess.disconnect(this._remoteAccessSignalId);
             this._remoteAccessSignalId = null;
+        }
+        if (this._remoteAccessAltSignalId && Main.panel.statusArea['remote-access']) {
+            Main.panel.statusArea['remote-access'].disconnect(this._remoteAccessAltSignalId);
+            this._remoteAccessAltSignalId = null;
         }
         if (this._clipboardTimerId) { GLib.source_remove(this._clipboardTimerId); this._clipboardTimerId = null; }
         if (this._sinkSignalId) { this._sink?.disconnect(this._sinkSignalId); this._sinkSignalId = null; }
