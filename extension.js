@@ -73,7 +73,10 @@ export default class DocktouchExtension extends Extension {
         // Volume Control
         this._volumeControl = new Gvc.MixerControl({ name: 'Docktouch Volume' });
         this._volumeControl.connect('state-changed', (c, state) => {
-            if (state === Gvc.MixerControlState.READY) this._setupVolumeStream();
+            if (state === Gvc.MixerControlState.READY) {
+                this._setupVolumeStream();
+                this._updateMicState();
+            }
         });
         this._volumeControl.connect('default-sink-changed', () => this._setupVolumeStream());
         this._volumeControl.open();
@@ -103,8 +106,39 @@ export default class DocktouchExtension extends Extension {
 
         this._sinkSignalId = null;
         this._muteSignalId = null;
+        this._micSignalId = null;
+        this._micMuteSignalId = null;
+        this._isMicActive = false;
+        this._isMicMuted = false;
+        this._isScreenActive = false;
+        this._isScreenRecording = false;
+        this._isScreenSharing = false;
+        this._screenRecordingSignalId = null;
+        this._screenSharingSignalId = null;
         this._capsLockSignalId = null;
         this._isCapsLockActive = false;
+
+        // Microphone monitoring
+        this._volumeControl.connect('stream-added', () => this._updateMicState());
+        this._volumeControl.connect('stream-removed', () => this._updateMicState());
+        this._volumeControl.connect('default-source-changed', () => {
+            this._setupMicStream();
+            this._updateMicState();
+        });
+        this._setupMicStream();
+        this._updateMicState();
+
+        // Screen Sharing monitoring
+        if (Main.panel.statusArea.screenRecording) {
+            this._screenRecordingSignalId = Main.panel.statusArea.screenRecording.connect('notify::visible', () => this._updateScreenState());
+        }
+        if (Main.panel.statusArea.screenSharing) {
+            this._screenSharingSignalId = Main.panel.statusArea.screenSharing.connect('notify::visible', () => this._updateScreenState());
+        }
+        if (Main.panel.statusArea.remoteAccess) {
+            this._remoteAccessSignalId = Main.panel.statusArea.remoteAccess.connect('notify::visible', () => this._updateScreenState());
+        }
+        this._updateScreenState();
 
         // Caps Lock monitoring
         try {
@@ -156,8 +190,54 @@ export default class DocktouchExtension extends Extension {
         }
     }
 
+    _setupMicStream() {
+        if (this._micMuteSignalId) {
+            this._volumeControl.get_default_source()?.disconnect(this._micMuteSignalId);
+            this._micMuteSignalId = null;
+        }
+        const source = this._volumeControl.get_default_source();
+        if (source) {
+            this._micMuteSignalId = source.connect('notify::is-muted', () => this._updateMicState());
+        }
+    }
+
+    _updateMicState() {
+        if (!this._volumeControl || this._volumeControl.get_state() !== Gvc.MixerControlState.READY) return;
+        const outputs = this._volumeControl.get_source_outputs() || [];
+        const active = outputs.some(o => !o.is_event_stream);
+        const source = this._volumeControl.get_default_source();
+        const isMuted = source ? source.is_muted : false;
+        
+        if (this._isMicActive !== active || this._isMicMuted !== isMuted) {
+            this._isMicActive = active;
+            this._isMicMuted = isMuted;
+            this._showOSDAll('mic', active ? 100 : 0);
+        }
+    }
+
+    _updateScreenState() {
+        const isRecording = Main.panel.statusArea.screenRecording?.visible || false;
+        const isSharing = Main.panel.statusArea.screenSharing?.visible || false;
+        const isRemote = Main.panel.statusArea.remoteAccess?.visible || false;
+        const active = isRecording || isSharing || isRemote;
+
+        if (this._isScreenActive !== active || this._isScreenRecording !== isRecording || this._isScreenSharing !== (isSharing || isRemote)) {
+            this._isScreenActive = active;
+            this._isScreenRecording = isRecording;
+            this._isScreenSharing = (isSharing || isRemote);
+            this._showOSDAll('screen', active ? 100 : 0);
+        }
+    }
+
     _showOSDAll(type, value) {
         if (type === 'caps') this._isCapsLockActive = (value > 0);
+        if (type === 'mic') this._isMicActive = (value > 0);
+        if (type === 'screen') {
+            this._isScreenActive = (value > 0);
+            this._docks.forEach(dock => {
+                if (dock._isExpanded) dock._updateExpandedContent(true);
+            });
+        }
         this._docks.forEach(dock => dock._showOSD(type, value));
     }
 
@@ -287,6 +367,22 @@ export default class DocktouchExtension extends Extension {
         if (this._monitorsChangedId) {
             Main.layoutManager.disconnect(this._monitorsChangedId);
             this._monitorsChangedId = null;
+        }
+        if (this._micMuteSignalId) {
+            this._volumeControl.get_default_source()?.disconnect(this._micMuteSignalId);
+            this._micMuteSignalId = null;
+        }
+        if (this._screenRecordingSignalId && Main.panel.statusArea.screenRecording) {
+            Main.panel.statusArea.screenRecording.disconnect(this._screenRecordingSignalId);
+            this._screenRecordingSignalId = null;
+        }
+        if (this._screenSharingSignalId && Main.panel.statusArea.screenSharing) {
+            Main.panel.statusArea.screenSharing.disconnect(this._screenSharingSignalId);
+            this._screenSharingSignalId = null;
+        }
+        if (this._remoteAccessSignalId && Main.panel.statusArea.remoteAccess) {
+            Main.panel.statusArea.remoteAccess.disconnect(this._remoteAccessSignalId);
+            this._remoteAccessSignalId = null;
         }
         if (this._clipboardTimerId) { GLib.source_remove(this._clipboardTimerId); this._clipboardTimerId = null; }
         if (this._sinkSignalId) { this._sink?.disconnect(this._sinkSignalId); this._sinkSignalId = null; }
