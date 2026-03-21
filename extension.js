@@ -110,9 +110,11 @@ export default class DocktouchExtension extends Extension {
         this._micMuteSignalId = null;
         this._isMicActive = false;
         this._isMicMuted = false;
+        this._isCameraActive = false;
         this._isScreenActive = false;
         this._isScreenRecording = false;
         this._isScreenSharing = false;
+        this._cameraSignalId = null;
         this._screenRecordingSignalId = null;
         this._screenSharingSignalId = null;
         this._capsLockSignalId = null;
@@ -127,6 +129,12 @@ export default class DocktouchExtension extends Extension {
         });
         this._setupMicStream();
         this._updateMicState();
+
+        // Camera monitoring
+        if (Main.panel.statusArea.camera) {
+            this._cameraSignalId = Main.panel.statusArea.camera.connect('notify::visible', () => this._updateCameraState());
+        }
+        this._updateCameraState();
 
         // Screen Sharing monitoring
         if (Main.panel.statusArea.screenRecording) {
@@ -218,6 +226,14 @@ export default class DocktouchExtension extends Extension {
         }
     }
 
+    _updateCameraState() {
+        const active = Main.panel.statusArea.camera?.visible || false;
+        if (this._isCameraActive !== active) {
+            this._isCameraActive = active;
+            this._showOSDAll('camera', active ? 100 : 0);
+        }
+    }
+
     _updateScreenState() {
         const isRecording = Main.panel.statusArea.screenRecording?.visible || false;
         const isSharing = Main.panel.statusArea.screenSharing?.visible || false;
@@ -235,6 +251,7 @@ export default class DocktouchExtension extends Extension {
     _showOSDAll(type, value) {
         if (type === 'caps') this._isCapsLockActive = (value > 0);
         if (type === 'mic') this._isMicActive = (value > 0);
+        if (type === 'camera') this._isCameraActive = (value > 0);
         if (type === 'screen') {
             this._isScreenActive = (value > 0);
             this._docks.forEach(dock => {
@@ -318,7 +335,11 @@ export default class DocktouchExtension extends Extension {
             dock._updateMiniPlayerVisibility();
             
             if (!isLocked) {
-                if (this._isCapsLockActive) {
+                if (this._isMicActive) {
+                    dock._showOSD('mic', 100);
+                } else if (this._isCameraActive) {
+                    dock._showOSD('camera', 100);
+                } else if (this._isCapsLockActive) {
                     dock._showOSD('caps', 100);
                 } else {
                     dock._showOSD('lock', 0);
@@ -374,6 +395,10 @@ export default class DocktouchExtension extends Extension {
         if (this._micMuteSignalId) {
             this._volumeControl.get_default_source()?.disconnect(this._micMuteSignalId);
             this._micMuteSignalId = null;
+        }
+        if (this._cameraSignalId && Main.panel.statusArea.camera) {
+            Main.panel.statusArea.camera.disconnect(this._cameraSignalId);
+            this._cameraSignalId = null;
         }
         if (this._screenRecordingSignalId && Main.panel.statusArea.screenRecording) {
             Main.panel.statusArea.screenRecording.disconnect(this._screenRecordingSignalId);

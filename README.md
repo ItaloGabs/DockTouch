@@ -11,7 +11,7 @@ Uma ilha dinâmica (Dynamic Island) elegante e funcional para o GNOME Shell, ins
 - **🎵 Media Player:** Controle de reprodução (MPRIS) com visualização de capa de álbum e waveform animada.
 - **🔊 OSD Inteligente:** Indicadores visuais personalizados para Volume, Brilho, Bateria e Caps Lock.
 - **📊 Estatísticas do Sistema:** Monitoramento em tempo real de CPU, RAM, GPU e Armazenamento.
-- **📅 Calendário & Eventos:** Acesso rápido ao calendário e relógio.
+- **⏰ Temporizador & Alarme:** Acesso rápido ao temporizador, alarmes e relógio.
 - **📋 Histórico de Área de Transferência:** Gerenciamento simples do que você copiou recentemente.
 - **🖥️ Modo de Visualização:** 
   - **Standard (Padrão):** Fixado no topo, integrado à barra superior.

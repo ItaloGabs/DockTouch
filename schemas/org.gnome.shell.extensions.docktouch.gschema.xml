@@ -31,7 +31,7 @@
     </key>
     <key name="show-calendar" type="b">
       <default>true</default>
-      <summary>Show calendar and time</summary>
+      <summary>Show timer and alarm</summary>
     </key>
     <key name="show-clipboard" type="b">
       <default>true</default>

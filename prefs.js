@@ -134,7 +134,7 @@ export default class DocktouchPreferences extends ExtensionPreferences {
         settings.bind('show-stats', statsSwitch, 'active', Gio.SettingsBindFlags.DEFAULT);
         featuresGroup.add(statsSwitch);
 
-        const calendarSwitch = new Adw.SwitchRow({ title: 'Mostrar Calendário' });
+        const calendarSwitch = new Adw.SwitchRow({ title: 'Mostrar temporizador e alarme' });
         settings.bind('show-calendar', calendarSwitch, 'active', Gio.SettingsBindFlags.DEFAULT);
         featuresGroup.add(calendarSwitch);
 

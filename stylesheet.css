@@ -41,7 +41,7 @@
     margin-right: 8px;
 }
 
-.mini-caps-icon, .mini-mic-icon {
+.mini-caps-icon, .mini-mic-icon, .mini-camera-icon {
     spacing: 3px;
 }
 
@@ -432,8 +432,8 @@
     background-color: #ffffff; /* White for brightness */
 }
 
-.osd-progress-bar.caps, .osd-progress-bar.mic, .osd-progress-bar.screen {
-    background-color: #ff9500; /* Orange for Caps Lock, Microphone and Screen Sharing */
+.osd-progress-bar.caps, .osd-progress-bar.mic, .osd-progress-bar.camera, .osd-progress-bar.screen {
+    background-color: #ff9500; /* Orange for Caps Lock, Microphone, Camera and Screen Sharing */
 }
 
 .osd-value-label {
