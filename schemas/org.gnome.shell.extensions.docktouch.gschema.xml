@@ -69,5 +69,9 @@
       <default>[]</default>
       <summary>History of copied text items</summary>
     </key>
+    <key name="pinned-clipboard-items" type="as">
+      <default>[]</default>
+      <summary>History of pinned text items</summary>
+    </key>
   </schema>
 </schemalist>

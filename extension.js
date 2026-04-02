@@ -20,6 +20,7 @@ export default class DocktouchExtension extends Extension {
         this._docks = [];
         
         this._clipboardHistory = this._settings.get_strv('clipboard-history') || [];
+        this._pinnedClipboardItems = this._settings.get_strv('pinned-clipboard-items') || [];
         this._lastClipboardText = this._clipboardHistory.length > 0 ? this._clipboardHistory[0] : '';
 
         // Managers
@@ -263,6 +264,7 @@ export default class DocktouchExtension extends Extension {
 
     _saveClipboardHistory() {
         this._settings.set_strv('clipboard-history', this._clipboardHistory);
+        this._settings.set_strv('pinned-clipboard-items', this._pinnedClipboardItems);
     }
 
     _setupClipboardObserver() {
@@ -271,6 +273,9 @@ export default class DocktouchExtension extends Extension {
             this._clipboard.get_text(St.ClipboardType.CLIPBOARD, (clipboard, text) => {
                 if (text && text.trim() !== '' && text !== this._lastClipboardText) {
                     this._lastClipboardText = text;
+                    const isPinned = this._pinnedClipboardItems.indexOf(text) !== -1;
+                    if (isPinned) return;
+
                     const index = this._clipboardHistory.indexOf(text);
                     if (index !== -1) this._clipboardHistory.splice(index, 1);
                     
