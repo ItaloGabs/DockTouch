@@ -5,6 +5,7 @@ import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Gvc from 'gi://Gvc';
+import GdkPixbuf from 'gi://GdkPixbuf';
 
 import { getSystemInfo } from './lib/utils.js';
 import { PlayerManager } from './lib/mpris.js';
@@ -269,11 +270,16 @@ export default class DocktouchExtension extends Extension {
 
     _setupClipboardObserver() {
         this._clipboard = St.Clipboard.get_default();
+        this._cacheDir = GLib.build_filenamev([GLib.get_user_cache_dir(), 'docktouch']);
+        GLib.mkdir_with_parents(this._cacheDir, 0o755);
+        this._lastClipboardHash = '';
+
         this._clipboardTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
+            // Check for Text
             this._clipboard.get_text(St.ClipboardType.CLIPBOARD, (clipboard, text) => {
                 if (text && text.trim() !== '' && text !== this._lastClipboardText) {
                     this._lastClipboardText = text;
-                    const isPinned = this._pinnedClipboardItems.indexOf(text) !== -1;
+                    const isPinned = this._pinnedClipboardItems.includes(text);
                     if (isPinned) return;
 
                     const index = this._clipboardHistory.indexOf(text);
@@ -286,6 +292,41 @@ export default class DocktouchExtension extends Extension {
                     this._docks.forEach(dock => {
                         if (dock._isExpanded && dock._activeTab === 'clipboard') {
                             dock._updateExpandedContent();
+                        }
+                    });
+                } else if (!text || text.trim() === '') {
+                    // Check for Image if no text
+                    this._clipboard.get_content(St.ClipboardType.CLIPBOARD, 'image/png', (c, bytes) => {
+                        if (bytes && bytes.get_size() > 0) {
+                            const hash = GLib.compute_checksum_for_bytes(GLib.ChecksumType.MD5, bytes);
+                            if (hash !== this._lastClipboardHash) {
+                                this._lastClipboardHash = hash;
+                                const filename = `clip_${Date.now()}.png`;
+                                const filepath = GLib.build_filenamev([this._cacheDir, filename]);
+                                const entry = `IMAGE:${filepath}`;
+
+                                // Save image to disk
+                                try {
+                                    const file = Gio.File.new_for_path(filepath);
+                                    file.replace_contents(bytes.get_data(), null, false, Gio.FileCreateFlags.NONE, null);
+                                    
+                                    this._lastClipboardText = entry;
+                                    const index = this._clipboardHistory.indexOf(entry);
+                                    if (index !== -1) this._clipboardHistory.splice(index, 1);
+                                    
+                                    this._clipboardHistory.unshift(entry);
+                                    if (this._clipboardHistory.length > 50) this._clipboardHistory.pop();
+                                    this._saveClipboardHistory();
+                                    
+                                    this._docks.forEach(dock => {
+                                        if (dock._isExpanded && dock._activeTab === 'clipboard') {
+                                            dock._updateExpandedContent();
+                                        }
+                                    });
+                                } catch (e) {
+                                    console.error("Docktouch: Error saving clipboard image: " + e);
+                                }
+                            }
                         }
                     });
                 }
